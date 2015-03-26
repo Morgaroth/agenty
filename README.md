@@ -51,7 +51,7 @@
 
 4. Propozycja rozwiązania:
   * na początek
-    * ustawienie systemu oraz konfiguracja
+    * przygotowanie szkieletu systemu, konfiguracja, rozpoznanie interesujących aspektów technologii
     * implementacja komunikacji z twitterem
     * prosta logika aktora polegająca na prostej analizie twitów
       * np statystyka słów
