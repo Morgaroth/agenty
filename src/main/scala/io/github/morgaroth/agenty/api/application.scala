@@ -2,7 +2,7 @@ package io.github.morgaroth.agenty.api
 
 import akka.actor.ActorSystem
 import akka.event.Logging
-import io.github.morgaroth.agenty.models.{Author, Reddit}
+import io.github.morgaroth.agenty.models.{Comment, Author, Reddit}
 import io.github.morgaroth.agenty.reddit.redditUrls
 import spray.client.pipelining._
 import spray.httpx.SprayJsonSupport
@@ -59,7 +59,7 @@ trait WebApi extends Directives with redditUrls with DefaultJsonProtocol with Sp
               println(s"$commentUrl fail with $t")
               None
           }
-          b.foreach(_.foreach(println(_)))
+          b.foreach(_.foreach(x => println(x.toString take 100)))
           Success(b)
         } catch {
           case t: Throwable =>
@@ -73,19 +73,30 @@ trait WebApi extends Directives with redditUrls with DefaultJsonProtocol with Sp
     b
   }
 
+  def parseComments(in: Option[RedditResponse]): List[Comment] = {
+    println(in.toString.take(30))
+    in.map(input =>
+      for {
+        entry <- input.data.children
+        unpacked = entry.data
+        author <- unpacked.author
+        score <- unpacked.score
+        body <- unpacked.body
+      } yield Comment(body, Author(author), score, parseComments(unpacked.replies))
+    ).getOrElse(List.empty)
+  }
+
+
   def fetchConvert: Future[List[Reddit]] = {
     val raw = fetch
-    //    val authors: Future[List[String]] = raw.map(_.flatMap(_._2.data.children.map(_.data.author)).flatten)
-    //    authors.flatMap( ids =>
-    //
-    //    )
     raw.map(_.map {
       case (red, commentRaw) =>
         for {
           author <- red.data.author
           points <- red.data.score
           title <- red.data.title
-        } yield Reddit(title, Author(author), points)
+          comments = parseComments(Some(commentRaw))
+        } yield Reddit(title, Author(author), points, comments)
     }).map(_.flatten)
   }
 }
