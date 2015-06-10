@@ -1,7 +1,9 @@
 package io.github.morgaroth.agenty.agents
 
-import akka.actor.{Props, Actor, ActorLogging, ActorRef}
+import akka.actor.{Actor, ActorLogging, ActorRef, Props}
+import akka.util.Timeout
 import io.github.morgaroth.agenty.models.Author
+import akka.pattern.ask
 
 import scala.collection.mutable
 
@@ -11,6 +13,8 @@ object Mother {
   val name = "mother_of_all"
 
   case class ActorFor(name: Author)
+
+  case class Broadcast(message: Any, timeout: Timeout)
 
   case class ActorOf(name: Author, ref: ActorRef)
 
@@ -26,5 +30,8 @@ class Mother extends Actor with ActorLogging {
     case ActorFor(author) =>
       val ref = users.getOrElseUpdate(author.normalized, context.actorOf(User.props(author, self), author.normalized))
       sender() ! ActorOf(author, ref)
+    case Broadcast(msg, timeout) =>
+      implicit val tm = timeout
+      sender() ! context.children.map(ch => ch ? msg).toList
   }
 }

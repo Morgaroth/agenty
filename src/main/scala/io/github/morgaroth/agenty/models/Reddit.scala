@@ -26,6 +26,8 @@ case class Comment(
 
 case class Author(id: String) {
   def normalized: String = id
+    .replaceAll("""\[""","left-square-bracket")
+    .replaceAll("""\]""","right-square-bracket")
 }
 
 object Author {
