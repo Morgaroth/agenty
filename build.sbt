@@ -13,7 +13,8 @@ libraryDependencies ++= Seq(
   "io.spray" %% "spray-routing" % "1.3.3",
   "com.typesafe.akka" %% "akka-slf4j" % "2.3.11",
   "ch.qos.logback" % "logback-classic" % "1.1.2",
-  "io.github.morgaroth" %% "spray-json-annotation" % "0.4.2"
+  "io.github.morgaroth" %% "spray-json-annotation" % "0.4.2",
+  "io.github.morgaroth" %% "utils-mongodb" % "1.2.9"
 )
 
 Revolver.settings

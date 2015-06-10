@@ -1,8 +1,11 @@
 package io.github.morgaroth.agenty.api
 
 import akka.actor.ActorSystem
-import akka.event.Logging
-import io.github.morgaroth.agenty.models.{Comment, Author, Reddit}
+import akka.pattern.ask
+import akka.util.Timeout
+import io.github.morgaroth.agenty.agents.Mother
+import io.github.morgaroth.agenty.agents.Mother.{ActorFor, ActorOf}
+import io.github.morgaroth.agenty.models.{Author, Comment, Reddit}
 import io.github.morgaroth.agenty.reddit.redditUrls
 import spray.client.pipelining._
 import spray.httpx.SprayJsonSupport
@@ -10,15 +13,19 @@ import spray.json._
 import spray.routing._
 
 import scala.concurrent.Future
-import scala.util.{Success, Failure, Try}
+import scala.concurrent.duration._
+import scala.language.postfixOps
+import scala.util.{Failure, Success, Try}
 
 trait Backend extends DefaultJsonProtocol with SprayJsonSupport {
   implicit val system = ActorSystem("LOCAL")
 
   import system.dispatcher
 
-  val redditsPIpe = sendReceive ~> unmarshal[RedditResponse]
+  val redditsPipe = sendReceive ~> unmarshal[RedditResponse]
   val redditDetails = sendReceive ~> unmarshal[List[RedditResponse]]
+
+  val mother = system.actorOf(Mother.props, Mother.name)
 }
 
 trait WebApi extends Directives with redditUrls with DefaultJsonProtocol with SprayJsonSupport {
@@ -26,27 +33,46 @@ trait WebApi extends Directives with redditUrls with DefaultJsonProtocol with Sp
 
   import system.dispatcher
 
+  //@formatter:off
   val routes: Route =
     pathEndOrSingleSlash {
       get(complete("Hello"))
     } ~
-      pathPrefix("auth" / "reddit") {
-        pathEndOrSingleSlash {
-          get {
-            parameterMap { par =>
-              complete("Hello from $name$ application\n" + par.mkString(", ") + "end parameters")
-            }
+    pathPrefix("auth" / "reddit") {
+      pathEndOrSingleSlash {
+        get {
+          parameterMap { par =>
+            complete("Hello from $name$ application\n" + par.mkString(", ") + "end parameters")
           }
         }
-      } ~
-      pathPrefix("fetch") {
-        pathEndOrSingleSlash {
-          get(complete(fetchConvert))
-        }
       }
+    } ~
+    pathPrefix("fetch") {
+      pathEndOrSingleSlash {
+        get(complete(fetchConvert))
+      }
+    } ~
+    pathPrefix("go") {
+      pathEndOrSingleSlash {
+        get(complete(simulate))
+      }
+    }
+  //@formatter:on
+
+
+  def simulate: Future[List[String]] = {
+    import system.dispatcher
+    implicit val tm: Timeout = 20 seconds
+    val data: Future[List[Reddit]] = fetchConvert
+
+    data.map(_.map { reddit =>
+      (mother ? ActorFor(reddit.author)).mapTo[ActorOf].map(_.ref).foreach(_ ! reddit)
+      reddit.author.normalized
+    })
+  }
 
   def fetch: Future[List[(RedditEntry, RedditResponse)]] = {
-    val redditsEntries: Future[List[RedditEntry]] = redditsPIpe(Get(europe(1000))).map(_.data.children)
+    val redditsEntries: Future[List[RedditEntry]] = redditsPipe(Get(europe(50))).map(_.data.children)
     val b: Future[List[(RedditEntry, RedditResponse)]] = redditsEntries.flatMap { reddits =>
       println(s"fetched reddits ${reddits.size}")
       val list: List[Future[Option[(RedditEntry, RedditResponse)]]] = reddits.map { reddit =>
@@ -73,16 +99,17 @@ trait WebApi extends Directives with redditUrls with DefaultJsonProtocol with Sp
     b
   }
 
-  def parseComments(in: Option[RedditResponse]): List[Comment] = {
+  def parseComments(in: Option[RedditResponse], parent: Author): List[Comment] = {
     println(in.toString.take(30))
     in.map(input =>
       for {
         entry <- input.data.children
         unpacked = entry.data
         author <- unpacked.author
+        authorObj = Author(author)
         score <- unpacked.score
         body <- unpacked.body
-      } yield Comment(body, Author(author), score, parseComments(unpacked.replies))
+      } yield Comment(body, authorObj, parent, score, parseComments(unpacked.replies, authorObj))
     ).getOrElse(List.empty)
   }
 
@@ -93,10 +120,11 @@ trait WebApi extends Directives with redditUrls with DefaultJsonProtocol with Sp
       case (red, commentRaw) =>
         for {
           author <- red.data.author
+          authorObj = Author(author)
           points <- red.data.score
           title <- red.data.title
-          comments = parseComments(Some(commentRaw))
-        } yield Reddit(title, Author(author), points, comments)
+          comments = parseComments(Some(commentRaw), authorObj)
+        } yield Reddit(title, authorObj, points, comments)
     }).map(_.flatten)
   }
 }
