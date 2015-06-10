@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Reddit - graph</title>
-    <script src="bower_components/jquery/dist/jquery.min.js"></script>
+    <script src="http://code.jquery.com/jquery-2.1.4.min.js"></script>
     <link rel="stylesheet" href="style/style.css"/>
 </head>
 <body>
@@ -25,7 +25,7 @@
         .attr("width", width)
         .attr("height", height);
 
-    d3.json("http://agenty-projekt.herokuapp.com/data/users", function (error, links) {
+    d3.json("users.json", function (error, links) {
         var graph = {
             nodes: [],
             links: []
