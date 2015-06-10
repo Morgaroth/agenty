@@ -41,7 +41,7 @@ trait WebApi extends Directives with redditUrls with DefaultJsonProtocol with Sp
   //@formatter:off
   val routes: Route =
     pathEndOrSingleSlash {
-      get(complete("Hello"))
+      getFromResource("index.html")
     } ~
     pathPrefix("auth" / "reddit") {
       pathEndOrSingleSlash {
