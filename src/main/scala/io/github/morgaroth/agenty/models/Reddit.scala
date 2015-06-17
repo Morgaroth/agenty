@@ -1,8 +1,9 @@
 package io.github.morgaroth.agenty.models
 
-import us.bleibinha.spray.json.macros.json
+import io.github.morgaroth.agenty.models.JsonJodaTimeProtocol._
+import org.joda.time.DateTime
 import spray.json._
-import spray.json.DefaultJsonProtocol._
+import us.bleibinha.spray.json.macros.json
 
 trait RedditBase {
   def content: String
@@ -19,6 +20,7 @@ case class Comment(
                     author: Author,
                     commented: Author,
                     score: Int,
+                    created: DateTime,
                     comments: List[Comment]) extends RedditBase {
   override def content: String = body
 }
@@ -26,8 +28,8 @@ case class Comment(
 
 case class Author(id: String) {
   def normalized: String = id
-    .replaceAll("""\[""","left-square-bracket")
-    .replaceAll("""\]""","right-square-bracket")
+    .replaceAll( """\[""", "left-square-bracket")
+    .replaceAll( """\]""", "right-square-bracket")
 }
 
 object Author {
@@ -40,18 +42,16 @@ object Comment extends DefaultJsonProtocol {
   import Author._
 
   implicit lazy val jsonFormat: JsonFormat[Comment] = lazyFormat(
-    jsonFormat(Comment.apply, "body", "author", "commentee", "score", "comments")
+    jsonFormat(Comment.apply, "body", "author", "commentee", "score", "created", "comments")
   )
 }
-
-
-import Comment.jsonFormat
 
 
 @json case class Reddit(
                          title: String,
                          author: Author,
                          score: Int,
+                         created: DateTime,
                          comments: List[Comment]
                          ) extends RedditBase {
   override def content: String = title

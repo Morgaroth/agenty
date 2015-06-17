@@ -37,7 +37,7 @@ class User(author: Author, mother: ActorRef) extends Actor with ActorLogging {
   }
 
   override def receive: Receive = {
-    case Reddit(_, _, _, comments) =>
+    case Reddit(_, _, _, _, comments) =>
       log.info(s"$author handle own reddit")
       notifyCommenters(comments)
 

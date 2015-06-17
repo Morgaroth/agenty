@@ -8,6 +8,7 @@ import io.github.morgaroth.agenty.agents.{User, Mother}
 import io.github.morgaroth.agenty.agents.Mother.{Broadcast, ActorFor, ActorOf}
 import io.github.morgaroth.agenty.models.{Author, Comment, Reddit}
 import io.github.morgaroth.agenty.reddit.redditUrls
+import org.joda.time.{DateTimeZone, DateTime}
 import spray.client.pipelining._
 import spray.httpx.SprayJsonSupport
 import spray.httpx.marshalling.ToResponseMarshallable
@@ -72,16 +73,12 @@ trait WebApi extends Directives with redditUrls with DefaultJsonProtocol with Sp
   //@formatter:on
 
 
-  def getFriends:ToResponseMarshallable = {
+  def getFriends: ToResponseMarshallable = {
     implicit val tm: Timeout = 20 seconds
     import Relation._
     (mother ? Broadcast(GetFriends, tm)).mapTo[List[Future[MyFriends]]].map(Future.sequence(_)).flatMap(identity).map(_.flatMap {
       (a: MyFriends) => a.friends.map(f => Relation(a.me.id, f._1.id, f._2))
     })
-
-    //      .map{
-    //      (d: List[Future[MyFriends]]) => Future.sequence(d)
-    //    }
   }
 
   def simulate(cnt: Int): Future[List[String]] = {
@@ -133,7 +130,9 @@ trait WebApi extends Directives with redditUrls with DefaultJsonProtocol with Sp
         authorObj = Author(author)
         score <- unpacked.score
         body <- unpacked.body
-      } yield Comment(body, authorObj, parent, score, parseComments(unpacked.replies, authorObj))
+        created <- unpacked.created_utc
+        createdObj = DateTime.now(DateTimeZone.UTC).withMillis(created * 1000 toLong)
+      } yield Comment(body, authorObj, parent, score, createdObj, parseComments(unpacked.replies, authorObj))
     ).getOrElse(List.empty)
   }
 
@@ -147,8 +146,10 @@ trait WebApi extends Directives with redditUrls with DefaultJsonProtocol with Sp
           authorObj = Author(author)
           points <- red.data.score
           title <- red.data.title
+          created <- red.data.created_utc
+          createdObj = DateTime.now(DateTimeZone.UTC).withMillis(created * 1000 toLong)
           comments = parseComments(Some(commentRaw), authorObj)
-        } yield Reddit(title, authorObj, points, comments)
+        } yield Reddit(title, authorObj, points, createdObj, comments)
     }).map(_.flatten)
   }
 }

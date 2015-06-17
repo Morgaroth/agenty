@@ -1,8 +1,8 @@
 package io.github.morgaroth.agenty.api
 
-import io.github.morgaroth.agenty.models.Reddit
 import spray.json._
 import us.bleibinha.spray.json.macros.lazyy.json
+
 
 
 case class RedditEntry(kind: String, data: RedditData)
@@ -22,8 +22,6 @@ case class RedditData(
                        )
 
 object RedditData extends DefaultJsonProtocol {
-
-  import RedditEntry.jsonFormatComment
 
   private val format: JsonFormat[RedditData] = lazyFormat(jsonFormat(RedditData.apply,
     "created_utc", "author", "id", "parent_id", "score", "domain", "title", "over_18", "selftext", "body", "replies"
