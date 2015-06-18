@@ -1,6 +1,13 @@
 package io.github.morgaroth.agenty.models
 
+import com.mongodb.casbah.commons.conversions.scala.RegisterJodaTimeConversionHelpers
+import com.novus.salat.annotations.Key
+import com.novus.salat.conversions.RegisterJodaTimeZoneConversionHelpers
+import com.novus.salat.global.ctx
+import com.typesafe.config.ConfigFactory
 import io.github.morgaroth.agenty.models.JsonJodaTimeProtocol._
+import io.github.morgaroth.utils.mongodb.salat.MongoDAOStringKey
+import org.bson.types.ObjectId
 import org.joda.time.DateTime
 import spray.json._
 import us.bleibinha.spray.json.macros.json
@@ -57,3 +64,15 @@ object Comment extends DefaultJsonProtocol {
   override def content: String = title
 }
 
+case class RedditDB(
+                     reddit: Reddit,
+                     @Key("_id") id: Option[ObjectId] = None
+                     )
+
+object RedditDB {
+  RegisterJodaTimeConversionHelpers()
+//  RegisterJodaTimeZoneConversionHelpers()
+  
+  lazy val dao = new MongoDAOStringKey[RedditDB](ConfigFactory.load().getConfig("db"), "reddits") {}
+
+}
