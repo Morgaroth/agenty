@@ -2,16 +2,16 @@ package io.github.morgaroth.agenty.api
 
 import akka.pattern.ask
 import akka.util.Timeout
-import com.mongodb.casbah.MongoDB
 import com.mongodb.casbah.commons.MongoDBObject
 import io.github.morgaroth.agenty.agents.Mother.{ActorFor, ActorOf, Broadcast}
 import io.github.morgaroth.agenty.agents.User.{GetFriends, MyFriends}
-import io.github.morgaroth.agenty.models.{RedditDB, Author, Comment, Reddit}
+import io.github.morgaroth.agenty.models.{Author, Comment, Reddit, RedditDB}
 import io.github.morgaroth.agenty.reddit.redditUrls
 import org.joda.time.{DateTime, DateTimeZone}
 import spray.client.pipelining._
 
-import scala.concurrent.Future
+import scala.annotation.tailrec
+import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.{Failure, Success, Try}
@@ -29,43 +29,51 @@ trait AgentsLogic {
     })
   }
 
-  def simulate(cnt: Int): Future[List[String]] = {
+  def simulate(cnt: Int): List[String] = {
 
     implicit val tm: Timeout = 20 seconds
-    val data: Future[List[Reddit]] = fetchConvert(cnt)
+    val data = fetchConvert(cnt)
 
-    data.map(_.map { reddit =>
+    data.map { reddit =>
       (mother ? ActorFor(reddit.author)).mapTo[ActorOf].map(_.ref).foreach(_ ! reddit)
       reddit.author.normalized
-    })
+    }
   }
 
-  def fetch(cnt: Int): Future[List[(RedditEntry, RedditResponse)]] = {
-    val redditsEntries: Future[List[RedditEntry]] = redditsPipe(Get(europe(cnt))).map(_.data.children)
-    val b: Future[List[(RedditEntry, RedditResponse)]] = redditsEntries.flatMap { reddits =>
-      println(s"fetched reddits ${reddits.size}")
-      val list: List[Future[Option[(RedditEntry, RedditResponse)]]] = reddits.map { reddit =>
-        val commentUrl: String = comment(reddit.data.id.get)
-        println(commentUrl)
-        val a: Try[Future[Option[RedditResponse]]] = try {
-          val map = redditDetails(Get(commentUrl)).map(_.find(_.data.children.exists(_.kind == "t1")))
-          val b = map.recover {
+  def fetch(cnt: Int): List[(RedditEntry, RedditResponse)] = {
+    @tailrec def doStep(last: Option[String], ready: List[(RedditEntry, RedditResponse)]): List[(RedditEntry, RedditResponse)] = {
+      if (ready.length >= cnt) return ready.take(cnt)
+      val redditsEntries = redditsPipe(Get(europe(100, last)))
+      val nextF = redditsEntries.map(_.data.after)
+      val thisResponse = redditsEntries.map(_.data.children)
+      val b: Future[List[(RedditEntry, RedditResponse)]] = thisResponse.flatMap { reddits =>
+        println(s"fetched reddits ${reddits.size}")
+        val list: List[Future[Option[(RedditEntry, RedditResponse)]]] = reddits.map { reddit =>
+          val commentUrl: String = comment(reddit.data.id.get)
+          println(commentUrl)
+          val a: Try[Future[Option[RedditResponse]]] = try {
+            val map = redditDetails(Get(commentUrl)).map(_.find(_.data.children.exists(_.kind == "t1")))
+            val b = map.recover {
+              case t: Throwable =>
+                println(s"$commentUrl fail with $t")
+                None
+            }
+            b.foreach(_.foreach(x => println(x.toString take 100)))
+            Success(b)
+          } catch {
             case t: Throwable =>
-              println(s"$commentUrl fail with $t")
-              None
+              println(s"$commentUrl fail throwing with $t")
+              Failure(t)
           }
-          b.foreach(_.foreach(x => println(x.toString take 100)))
-          Success(b)
-        } catch {
-          case t: Throwable =>
-            println(s"$commentUrl fail throwing with $t")
-            Failure(t)
+          a.getOrElse(Future.successful(None)).map(_.map(x => reddit -> x))
         }
-        a.getOrElse(Future.successful(None)).map(_.map(x => reddit -> x))
+        Future.sequence(list).map(x => x.flatten)
       }
-      Future.sequence(list).map(_.flatten.toList)
+      val result = Await.result(b, 10.minutes)
+      val next = Await.result(nextF, 10.seconds)
+      doStep(next, ready ::: result)
     }
-    b
+    doStep(None, List.empty)
   }
 
   def parseComments(in: Option[RedditResponse], parent: Author): List[Comment] = {
@@ -84,9 +92,9 @@ trait AgentsLogic {
     ).getOrElse(List.empty)
   }
 
-  def fetchConvert(cnt: Int = 100, saveToDB: Boolean = false): Future[List[Reddit]] = {
+  def fetchConvert(cnt: Int = 100, saveToDB: Boolean = false): List[Reddit] = {
     val raw = fetch(cnt)
-    val result = raw.map(_.map {
+    val reddits = raw.flatMap {
       case (red, commentRaw) =>
         for {
           author <- red.data.author
@@ -97,15 +105,13 @@ trait AgentsLogic {
           createdObj = DateTime.now(DateTimeZone.UTC).withMillis(created * 1000 toLong)
           comments = parseComments(Some(commentRaw), authorObj)
         } yield Reddit(title, authorObj, points, createdObj, comments)
-    }).map(_.flatten)
-    if (saveToDB) {
-      result.foreach { reddits =>
-        val existing = RedditDB.dao.find(MongoDBObject.empty).map(x => x.reddit.created).toSet
-        val nev = reddits.filterNot(r => existing.contains(r.created)).map(RedditDB(_: Reddit))
-        val saveResult = RedditDB.dao.insert(nev)
-        println(saveResult)
-      }
     }
-    result
+    if (saveToDB) {
+      val existing = RedditDB.dao.find(MongoDBObject.empty).map(x => x.reddit.created).toSet
+      val nev = reddits.filterNot(r => existing.contains(r.created)).map(RedditDB(_: Reddit))
+      val saveResult = RedditDB.dao.insert(nev)
+      println(s"saved ${saveResult.size}")
+    }
+    reddits
   }
 }

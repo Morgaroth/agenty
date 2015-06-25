@@ -4,7 +4,6 @@ import spray.json._
 import us.bleibinha.spray.json.macros.lazyy.json
 
 
-
 case class RedditEntry(kind: String, data: RedditData)
 
 case class RedditData(
@@ -46,6 +45,6 @@ object RedditEntry extends DefaultJsonProtocol {
   implicit lazy val jsonFormatComment: JsonFormat[RedditEntry] = lazyFormat(jsonFormat(RedditEntry.apply, "kind", "data"))
 }
 
-@json case class RedditResponseData(modhash: String, children: List[RedditEntry])
+@json case class RedditResponseData(modhash: String, children: List[RedditEntry], after: Option[String])
 
 @json case class RedditResponse(kind: String, data: RedditResponseData)
