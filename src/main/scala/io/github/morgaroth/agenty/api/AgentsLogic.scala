@@ -32,7 +32,7 @@ trait AgentsLogic extends redditUrls {
   def simulate(cnt: Int): List[String] = {
 
     implicit val tm: Timeout = 20 seconds
-    val data = fetchConvert(cnt)
+    val data = fetchConvert(cnt)._1
 
     data.map { reddit =>
       (mother ? ActorFor(reddit.author)).mapTo[ActorOf].map(_.ref).foreach(_ ! reddit)
@@ -92,7 +92,7 @@ trait AgentsLogic extends redditUrls {
     ).getOrElse(List.empty)
   }
 
-  def fetchConvert(cnt: Int = 100, saveToDB: Boolean = false): List[Reddit] = {
+  def fetchConvert(cnt: Int = 100, saveToDB: Boolean = false): (List[Reddit], Option[Int]) = {
     val raw = fetch(cnt)
     val reddits = raw.flatMap {
       case (red, commentRaw) =>
@@ -106,12 +106,13 @@ trait AgentsLogic extends redditUrls {
           comments = parseComments(Some(commentRaw), authorObj)
         } yield Reddit(title, authorObj, points, createdObj, comments)
     }
-    if (saveToDB) {
-      val existing = RedditDB.dao.find(MongoDBObject.empty).map(x => x.reddit.created).toSet
-      val nev = reddits.filterNot(r => existing.contains(r.created)).map(RedditDB(_: Reddit))
+    val save = if (saveToDB) {
+      val existing = RedditDB.dao.find(MongoDBObject.empty).map(x => x.reddit.created.getMillis).toSet
+      val nev = reddits.filterNot(r => existing.contains(r.created.getMillis)).map(RedditDB(_: Reddit))
       val saveResult = RedditDB.dao.insert(nev)
       println(s"saved ${saveResult.size}")
-    }
-    reddits
+      Some(saveResult.length)
+    } else None
+    (reddits, save)
   }
 }
