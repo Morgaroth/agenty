@@ -16,8 +16,8 @@ import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.{Failure, Success, Try}
 
-trait AgentsLogic {
-  this: redditUrls with Backend =>
+trait AgentsLogic extends redditUrls {
+  this: Backend =>
 
   import system.dispatcher
 
