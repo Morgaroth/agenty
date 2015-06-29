@@ -56,6 +56,11 @@ trait WebApi extends Directives with redditUrls with DefaultJsonProtocol with Sp
         }
       }
     } ~
+    pathPrefix("simulate") {
+      pathEndOrSingleSlash {
+        get(complete(simulateSteps()))
+      }
+    } ~
     pathPrefix("data" / "users") {
       pathEndOrSingleSlash {
         get(complete(getFriends))

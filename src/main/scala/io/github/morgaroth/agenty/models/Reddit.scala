@@ -66,13 +66,16 @@ object Comment extends DefaultJsonProtocol {
 
 case class RedditDB(
                      reddit: Reddit,
-                     @Key("_id") id: Option[ObjectId] = None
+                     @Key("_id") id: String
                      )
 
 object RedditDB {
   RegisterJodaTimeConversionHelpers()
-//  RegisterJodaTimeZoneConversionHelpers()
-  
+
+  //  RegisterJodaTimeZoneConversionHelpers()
+
+  def from(reddit: Reddit): RedditDB = RedditDB(reddit, s"${reddit.author.id}__${reddit.created.getMillis}")
+
   lazy val dao = new MongoDAOStringKey[RedditDB](ConfigFactory.load().getConfig("db"), "reddits") {}
 
 }

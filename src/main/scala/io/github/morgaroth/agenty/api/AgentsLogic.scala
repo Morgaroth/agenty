@@ -3,16 +3,18 @@ package io.github.morgaroth.agenty.api
 import akka.pattern.ask
 import akka.util.Timeout
 import com.mongodb.casbah.commons.MongoDBObject
-import io.github.morgaroth.agenty.agents.Mother.{ActorFor, ActorOf, Broadcast}
-import io.github.morgaroth.agenty.agents.User.{GetFriends, MyFriends}
+import io.github.morgaroth.agenty.agents.GroupAgent.{GetUsers, GroupUsers}
+import io.github.morgaroth.agenty.agents.Mother._
+import io.github.morgaroth.agenty.agents.User._
 import io.github.morgaroth.agenty.models.{Author, Comment, Reddit, RedditDB}
 import io.github.morgaroth.agenty.reddit.redditUrls
 import org.joda.time.{DateTime, DateTimeZone}
 import spray.client.pipelining._
 
 import scala.annotation.tailrec
-import scala.concurrent.{Await, Future}
+import scala.collection.mutable
 import scala.concurrent.duration._
+import scala.concurrent.{Await, Future}
 import scala.language.postfixOps
 import scala.util.{Failure, Success, Try}
 
@@ -38,6 +40,59 @@ trait AgentsLogic extends redditUrls {
       (mother ? ActorFor(reddit.author)).mapTo[ActorOf].map(_.ref).foreach(_ ! reddit)
       reddit.author.normalized
     }
+  }
+
+  def simulateSteps() = {
+
+    implicit val tm: Timeout = 20 seconds
+
+    val dataIt = RedditDB.dao.find(MongoDBObject.empty).sort(MongoDBObject("reddit.created" -> 1)).map(_.reddit)
+
+    var currentGroups: Map[Set[Author], Int] = Map.empty
+
+    val statistics = mutable.Map.empty[Int, Int]
+    val redditStats = mutable.Map.empty[Int, Int]
+
+    while (dataIt.hasNext) {
+      val nextreddit = dataIt.next()
+      mother ! Clear
+      Thread.sleep(2000)
+      val res: Future[Any] = (mother ? ActorFor(nextreddit.author)).mapTo[ActorOf].map(_.ref).flatMap(c => (c ? nextreddit).mapTo[Handled.type])
+      Await.result(res, 30.seconds)
+      println(s"reddit ${nextreddit.author.normalized} from ${nextreddit.created} handled")
+      Await.result((mother ? Broadcast(FindGroups, tm)).mapTo[List[Ready.type]], 50 seconds)
+      Thread.sleep(6000)
+      val groups: List[Set[Author]] = Await.result(
+        (mother ? BroadcastGroup(GetUsers, 240 seconds)).mapTo[List[Future[GroupUsers]]].flatMap(x => Future.sequence(x)),
+        250 seconds
+      ).map(_.users)
+      println(s"life ${groups.size}")
+
+      // update reddit stats
+      redditStats.update(groups.size, redditStats.getOrElse(groups.size, 0) + 1)
+
+      val (liveGroups, deadGroups) = currentGroups.partition(groups.contains)
+      val newGroups = groups.filterNot(currentGroups.contains)
+      // update statistics with dead groups
+      deadGroups.foreach { x =>
+        val nev = statistics.getOrElseUpdate(x._2, 0)
+        statistics.update(x._2, nev + 1)
+      }
+      println(s"dead ${deadGroups.size}")
+
+      // update life groups
+      currentGroups = Map.empty
+      currentGroups ++= liveGroups.map(x => x._1 -> (x._2 + 1))
+      currentGroups ++= newGroups.map(x => x -> 1)
+      println(statistics.mkString("groups life: [Days, Count]: ", ", ", ""))
+      println(redditStats.mkString("groups in reddirs: [Groups, Count]: ", ", ", ""))
+    }
+    currentGroups.foreach { x =>
+      val nev = statistics.getOrElse(x._2, 1)
+      statistics.update(x._2, nev)
+    }
+    println(statistics)
+    (statistics.toMap, redditStats.toMap)
   }
 
   def fetch(cnt: Int): List[(RedditEntry, RedditResponse)] = {
@@ -107,9 +162,7 @@ trait AgentsLogic extends redditUrls {
         } yield Reddit(title, authorObj, points, createdObj, comments)
     }
     val save = if (saveToDB) {
-      val existing = RedditDB.dao.find(MongoDBObject.empty).map(x => x.reddit.created.getMillis).toSet
-      val nev = reddits.filterNot(r => existing.contains(r.created.getMillis)).map(RedditDB(_: Reddit))
-      val saveResult = RedditDB.dao.insert(nev)
+      val saveResult = reddits.map(RedditDB.from).map(RedditDB.dao.save(_: RedditDB))
       println(s"saved ${saveResult.size}")
       Some(saveResult.length)
     } else None

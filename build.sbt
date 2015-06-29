@@ -15,8 +15,8 @@ libraryDependencies ++= Seq(
   "io.github.morgaroth" %% "utils-mongodb" % "1.2.9"
 )
 
+mainClass in assembly := Some("io.github.morgaroth.")
+
 Revolver.settings
 
 addCompilerPlugin("org.scalamacros" % "paradise" % "2.0.1" cross CrossVersion.full)
-
-enablePlugins(JavaAppPackaging)
