@@ -168,4 +168,18 @@ trait AgentsLogic extends redditUrls {
     } else None
     (reddits, save)
   }
+
+  def calculateCommentsMean(): (Int, Int) = {
+    def countComments(comments: List[Comment]): Int = {
+      comments match {
+        case Nil => 0
+        case any => any.map(x => countComments(x.comments)).sum + any.length
+      }
+    }
+
+    val dataIt = RedditDB.dao.find(MongoDBObject.empty).map(_.reddit)
+    dataIt.foldLeft((0, 0)) {
+      case ((comments, reddits), r) => (comments + countComments(r.comments), reddits + 1)
+    }
+  }
 }
